@@ -200,3 +200,34 @@ export function computeTrackStats(tracks: any[] = []) {
     trackCount: tracks.length,
   };
 }
+
+export async function searchTrack(token: string, title: string, artist: string) {
+  try {
+    const q = encodeURIComponent(`${title} ${artist}`);
+    const url = `https://api.spotify.com/v1/search?q=${q}&type=track&limit=3`;
+
+    const result = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!result.ok) return null;
+
+    const data = await result.json();
+    const track = data.tracks?.items?.[0];
+
+    if (!track) return null;
+
+    return {
+      id: track.id,
+      name: track.name,
+      artist: track.artists?.[0]?.name,
+      albumImage: track.album?.images?.[0]?.url || null,
+      spotifyUrl: track.external_urls?.spotify,
+      uri: track.uri,
+    };
+  } catch (err) {
+    console.error('searchTrack error:', err);
+    return null;
+  }
+}

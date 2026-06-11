@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics, computeTrackStats } from '@/lib/spotify';
+import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics, computeTrackStats, searchTrack } from '@/lib/spotify';
 import {
   BarChart,
   Bar,
@@ -39,6 +39,15 @@ type RadarPoint = {
   value: number;
 };
 
+type Recommendation = {
+  title: string;
+  artist: string;
+  reason: string;
+  albumImage?: string | null;
+  spotifyUrl?: string;
+  found?: boolean;
+};
+
 const AXIS_LABELS: Record<string, string> = {
   recency: '최신성',
   retro: '레트로',
@@ -62,7 +71,7 @@ export default function Home() {
   } | null>(null);
   
   // Recommendation states
-  const [recommendations, setRecommendations] = useState<{ title: string; artist: string; reason: string }[]>([]);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
 
@@ -74,7 +83,7 @@ export default function Home() {
   };
 
   const getRecommendations = async () => {
-    if (tracks.length === 0) return;
+    if (tracks.length === 0 || !token) return;
     
     setRecLoading(true);
     setRecError(null);
@@ -82,7 +91,6 @@ export default function Home() {
     try {
       const topTracks = tracks.slice(0, 20).map(t => t.name);
       
-      // Get unique artist names from tracks and take top 10
       const artistNamesMap: Record<string, boolean> = {};
       const uniqueArtistNames: string[] = [];
       tracks.forEach(track => {
@@ -107,8 +115,24 @@ export default function Home() {
       
       if (data.error) {
         setRecError(data.error);
-      } else {
-        setRecommendations(data.recommendations || []);
+      } else if (data.recommendations) {
+        // Enrich recommendations with Spotify data
+        const accessToken = localStorage.getItem('spotify_access_token') || '';
+        const enriched = await Promise.all(
+          data.recommendations.map(async (rec: { title: string; artist: string; reason: string }) => {
+            const found = await searchTrack(accessToken, rec.title, rec.artist);
+            return found
+              ? { 
+                  ...rec, 
+                  albumImage: found.albumImage, 
+                  spotifyUrl: found.spotifyUrl, 
+                  found: true 
+                }
+              : { ...rec, found: false };
+          })
+        );
+        console.log('enriched recommendations:', enriched);
+        setRecommendations(enriched);
       }
     } catch (err) {
       console.error('Failed to get recommendations:', err);
@@ -319,18 +343,41 @@ export default function Home() {
 
           {recommendations.length > 0 && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {recommendations.map((rec, index) => (
-                <div
-                  key={index}
-                  className="rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 transition-all hover:bg-zinc-800/60"
-                >
-                  <div className="font-bold text-white text-lg mb-1">{rec.title}</div>
-                  <div className="text-sm font-medium text-green-500 mb-3">{rec.artist}</div>
-                  <div className="text-sm text-zinc-400 leading-relaxed italic">
-                    "{rec.reason}"
+              {recommendations.map((rec, index) => {
+                const CardContent = (
+                  <div className={`flex gap-4 rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 transition-all hover:bg-zinc-800/60 hover:border-green-500/50 ${rec.spotifyUrl ? 'cursor-pointer' : ''}`}>
+                    <div className="relative h-16 w-16 shrink-0 shadow-lg">
+                      {rec.albumImage ? (
+                        <Image
+                          src={rec.albumImage}
+                          alt={rec.title}
+                          fill
+                          sizes="64px"
+                          className="rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full rounded-lg bg-zinc-800 flex items-center justify-center text-xs text-zinc-500">No Image</div>
+                      )}
+                    </div>
+                    <div className="overflow-hidden flex-1">
+                      <div className="font-bold text-white text-lg mb-0.5 truncate">{rec.title}</div>
+                      <div className="text-sm font-medium text-green-500 mb-2 truncate">{rec.artist}</div>
+                      <div className="text-xs text-zinc-400 leading-tight line-clamp-2 italic mb-2">
+                        "{rec.reason}"
+                      </div>
+                      {!rec.found && <div className="text-[10px] text-zinc-600">Spotify에서 찾을 수 없음</div>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+
+                return rec.spotifyUrl ? (
+                  <a key={index} href={rec.spotifyUrl} target="_blank" rel="noopener noreferrer" className="block">
+                    {CardContent}
+                  </a>
+                ) : (
+                  <div key={index}>{CardContent}</div>
+                );
+              })}
             </div>
           )}
         </section>
