@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics, computeTrackStats, searchTrack } from '@/lib/spotify';
+import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics, computeTrackStats, searchTrack, searchArtistTracks } from '@/lib/spotify';
 import {
   BarChart,
   Bar,
@@ -75,6 +75,11 @@ export default function Home() {
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
 
+  // Artist tracks modal states
+  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  const [artistTracks, setArtistTracks] = useState<{ id: string; name: string; albumImage: string | null; spotifyUrl: string; albumName: string }[]>([]);
+  const [artistLoading, setArtistLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
   const logout = () => {
@@ -139,6 +144,21 @@ export default function Home() {
       setRecError('추천 정보를 가져오는 중 오류가 발생했습니다.');
     } finally {
       setRecLoading(false);
+    }
+  };
+
+  const handleArtistClick = async (artistName: string) => {
+    setSelectedArtist(artistName);
+    setArtistLoading(true);
+    setArtistTracks([]);
+    try {
+      const accessToken = localStorage.getItem('spotify_access_token') || '';
+      const tracks = await searchArtistTracks(accessToken, artistName);
+      setArtistTracks(tracks);
+    } catch (err) {
+      console.error('Failed to fetch artist tracks:', err);
+    } finally {
+      setArtistLoading(false);
     }
   };
 
@@ -345,7 +365,7 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {recommendations.map((rec, index) => {
                 const CardContent = (
-                  <div className={`flex gap-4 rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 transition-all hover:bg-zinc-800/60 hover:border-green-500/50 ${rec.spotifyUrl ? 'cursor-pointer' : ''}`}>
+                  <div className={`flex h-full gap-4 rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 transition-all hover:bg-zinc-800/60 hover:border-green-500/50 ${rec.spotifyUrl ? 'cursor-pointer' : ''}`}>
                     <div className="relative h-16 w-16 shrink-0 shadow-lg">
                       {rec.albumImage ? (
                         <Image
@@ -365,7 +385,7 @@ export default function Home() {
                       <div className="text-xs text-zinc-400 leading-tight line-clamp-2 italic mb-2">
                         "{rec.reason}"
                       </div>
-                      {!rec.found && <div className="text-[10px] text-zinc-600">Spotify에서 찾을 수 없음</div>}
+                      {!rec.found && <div className="text-[10px] text-zinc-600 font-medium">Spotify에서 찾을 수 없음</div>}
                     </div>
                   </div>
                 );
@@ -404,7 +424,14 @@ export default function Home() {
                   itemStyle={{ color: '#22c55e', fontWeight: 'bold' }}
                   cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                 />
-                <Bar dataKey="count" fill="#22c55e" radius={[0, 6, 6, 0]} barSize={32}>
+                <Bar 
+                  dataKey="count" 
+                  fill="#22c55e" 
+                  radius={[0, 6, 6, 0]} 
+                  barSize={32}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(data) => handleArtistClick(data.name)}
+                >
                   {artistData.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
@@ -461,6 +488,73 @@ export default function Home() {
       <footer className="mt-20 border-t border-zinc-900 p-12 text-center text-zinc-500 text-sm">
         <p>© 2026 Music Analyzer. Powered by Spotify API.</p>
       </footer>
+
+      {/* Artist Tracks Modal */}
+      {selectedArtist && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-300"
+          onClick={() => setSelectedArtist(null)}
+        >
+          <div 
+            className="relative w-full max-w-2xl max-h-[80vh] overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-800 p-6">
+              <h3 className="text-2xl font-bold text-white">{selectedArtist}의 곡</h3>
+              <button 
+                onClick={() => setSelectedArtist(null)}
+                className="rounded-full p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-2">
+              {artistLoading ? (
+                <div className="flex h-32 items-center justify-center text-zinc-400 animate-pulse">
+                  곡을 불러오는 중...
+                </div>
+              ) : artistTracks.length > 0 ? (
+                artistTracks.map((track) => (
+                  <a 
+                    key={track.id} 
+                    href={track.spotifyUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-4 rounded-xl p-3 transition-all hover:bg-zinc-800 group"
+                  >
+                    <div className="relative h-12 w-12 shrink-0">
+                      {track.albumImage ? (
+                        <Image
+                          src={track.albumImage}
+                          alt={track.name}
+                          fill
+                          sizes="48px"
+                          className="rounded object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full rounded bg-zinc-800" />
+                      )}
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="truncate font-bold text-white group-hover:text-green-500 transition-colors">
+                        {track.name}
+                      </div>
+                      <div className="truncate text-sm text-zinc-400">
+                        {track.albumName}
+                      </div>
+                    </div>
+                  </a>
+                ))
+              ) : (
+                <div className="py-12 text-center text-zinc-500">
+                  곡을 찾을 수 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

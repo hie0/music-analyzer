@@ -231,3 +231,42 @@ export async function searchTrack(token: string, title: string, artist: string) 
     return null;
   }
 }
+
+export async function searchArtistTracks(token: string, artistName: string) {
+  try {
+    const q = encodeURIComponent(artistName);
+    const url = `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`;
+
+    const result = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!result.ok) return [];
+
+    const data = await result.json();
+    const items = data.tracks?.items || [];
+
+    // Filter tracks to ensure the artistName matches one of the track's artists
+    const lowerArtistName = artistName.toLowerCase();
+    let filtered = items.filter((track: any) =>
+      track.artists?.some((a: any) => a.name?.toLowerCase().includes(lowerArtistName))
+    );
+
+    // Fallback to original items if filtering results in an empty list
+    if (filtered.length === 0) {
+      filtered = items;
+    }
+
+    return filtered.map((track: any) => ({
+      id: track.id,
+      name: track.name,
+      albumImage: track.album?.images?.[0]?.url || null,
+      spotifyUrl: track.external_urls?.spotify,
+      albumName: track.album?.name,
+    }));
+  } catch (err) {
+    console.error('searchArtistTracks error:', err);
+    return [];
+  }
+}
