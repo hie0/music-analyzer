@@ -1,65 +1,205 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import Image from 'next/image';
+import { redirectToAuthCodeFlow, getTopTracks } from '@/lib/spotify';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts';
+
+type SpotifyTrack = {
+  id: string;
+  name: string;
+  artists: { name: string }[];
+  album: {
+    name: string;
+    images: { url: string }[];
+  };
+};
+
+type ArtistData = {
+  name: string;
+  count: number;
+};
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+  const [token, setToken] = useState<string | null>(null);
+  const [tracks, setTracks] = useState<SpotifyTrack[]>([]);
+  const [artistData, setArtistData] = useState<ArtistData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const logout = () => {
+    localStorage.clear();
+    window.location.reload();
+  };
+
+  const fetchData = useCallback(async (accessToken: string) => {
+    try {
+      const data = await getTopTracks(accessToken);
+      if (data.items) {
+        setTracks(data.items);
+        
+        // Aggregate artists
+        const counts: Record<string, number> = {};
+        data.items.forEach((track: SpotifyTrack) => {
+          track.artists.forEach((artist) => {
+            counts[artist.name] = (counts[artist.name] || 0) + 1;
+          });
+        });
+
+        const formattedData = Object.entries(counts)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10); // Top 10 artists
+
+        setArtistData(formattedData);
+      } else if (data.error) {
+        // Token might be invalid
+        logout();
+      }
+    } catch (err) {
+      console.error('Error fetching data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const storedToken = localStorage.getItem('spotify_access_token');
+      if (storedToken) {
+        setToken(storedToken);
+        await fetchData(storedToken);
+      } else {
+        setLoading(false);
+      }
+    };
+    init();
+  }, [fetchData]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-white font-sans">
+        <div className="text-xl animate-pulse text-green-500 font-bold">Loading Your Taste...</div>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white p-4 font-sans">
+        <div className="mb-12 text-center">
+          <h1 className="mb-4 text-6xl font-extrabold tracking-tighter text-white">
+            Music <span className="text-green-500">Analyzer</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+          <p className="text-zinc-400 text-lg">Discover your Spotify listening habits</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <button
+          onClick={redirectToAuthCodeFlow}
+          className="group relative flex items-center justify-center gap-3 overflow-hidden rounded-full bg-green-500 px-10 py-5 text-xl font-bold text-black transition-all hover:scale-105 active:scale-95"
+        >
+          <span>Login with Spotify</span>
+          <div className="absolute inset-0 bg-white/20 transition-transform translate-x-full group-hover:translate-x-0" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-green-500/30">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-black/80 p-6 backdrop-blur-md">
+        <h1 className="text-2xl font-bold tracking-tighter text-green-500">Music Analyzer</h1>
+        <button
+          onClick={logout}
+          className="rounded-full border border-zinc-700 px-6 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white"
+        >
+          Logout
+        </button>
+      </header>
+
+      <main className="mx-auto max-w-6xl p-6 py-12">
+        <section className="mb-16">
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight">Top Artists</h2>
+            <p className="text-zinc-400">Frequency in your top 50 tracks (medium term)</p>
+          </div>
+          
+          <div className="h-[450px] w-full rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-2xl">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={artistData} layout="vertical" margin={{ left: 30, right: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" horizontal={false} />
+                <XAxis type="number" stroke="#555" />
+                <YAxis dataKey="name" type="category" stroke="#ccc" width={100} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{ 
+                    backgroundColor: '#18181b', 
+                    border: '1px solid #333', 
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                  }}
+                  itemStyle={{ color: '#22c55e', fontWeight: 'bold' }}
+                  cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
+                />
+                <Bar dataKey="count" fill="#22c55e" radius={[0, 6, 6, 0]} barSize={32}>
+                  {artistData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={`rgba(34, 197, 94, ${1 - index * 0.08})`}
+                      className="transition-all duration-300"
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight">Top Tracks</h2>
+            <p className="text-zinc-400">Your most played songs recently</p>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {tracks.map((track, idx) => (
+              <div
+                key={track.id}
+                className="group flex items-center gap-4 rounded-xl bg-zinc-900/40 p-4 transition-all hover:bg-zinc-800/60 border border-zinc-800/50 hover:border-zinc-700"
+              >
+                <div className="flex-none text-zinc-600 font-mono text-sm w-4">{idx + 1}</div>
+                <div className="relative h-16 w-16 shrink-0 shadow-xl transition-transform group-hover:scale-105">
+                  <Image
+                    src={track.album.images[0]?.url || ''}
+                    alt={track.name}
+                    fill
+                    sizes="64px"
+                    className="rounded-lg object-cover"
+                  />
+                </div>
+                <div className="overflow-hidden">
+                  <div className="truncate font-bold text-white group-hover:text-green-500 transition-colors">
+                    {track.name}
+                  </div>
+                  <div className="truncate text-sm text-zinc-400">
+                    {track.artists.map((a) => a.name).join(', ')}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
+      
+      <footer className="mt-20 border-t border-zinc-900 p-12 text-center text-zinc-500 text-sm">
+        <p>© 2026 Music Analyzer. Powered by Spotify API.</p>
+      </footer>
     </div>
   );
 }
