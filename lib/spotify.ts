@@ -157,3 +157,46 @@ export function computeTasteMetrics(tracks: any[] = []): TasteMetrics {
     fullAlbum: Math.round(fullAlbum),
   };
 }
+
+export function computeTrackStats(tracks: any[] = []) {
+  if (!tracks || tracks.length === 0) {
+    return {
+      hours: 0,
+      minutes: 0,
+      uniqueArtists: 0,
+      uniqueAlbums: 0,
+      trackCount: 0,
+    };
+  }
+
+  let totalDurationMs = 0;
+  const artistIds = new Set<string>();
+  const albumIds = new Set<string>();
+
+  tracks.forEach((track) => {
+    totalDurationMs += track.duration_ms || 0;
+
+    if (track.artists) {
+      track.artists.forEach((artist: any) => {
+        if (artist?.id) artistIds.add(artist.id);
+      });
+    }
+
+    const albumId = track.album?.id || track.album?.name;
+    if (albumId) {
+      albumIds.add(albumId);
+    }
+  });
+
+  const totalMinutes = Math.round(totalDurationMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return {
+    hours,
+    minutes,
+    uniqueArtists: artistIds.size,
+    uniqueAlbums: albumIds.size,
+    trackCount: tracks.length,
+  };
+}

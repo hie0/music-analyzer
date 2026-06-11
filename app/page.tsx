@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics } from '@/lib/spotify';
+import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics, computeTrackStats } from '@/lib/spotify';
 import {
   BarChart,
   Bar,
@@ -53,11 +53,69 @@ export default function Home() {
   const [tracks, setTracks] = useState<SpotifyTrack[]>([]);
   const [artistData, setArtistData] = useState<ArtistData[]>([]);
   const [radarData, setRadarData] = useState<RadarPoint[]>([]);
+  const [stats, setStats] = useState<{
+    hours: number;
+    minutes: number;
+    uniqueArtists: number;
+    uniqueAlbums: number;
+    trackCount: number;
+  } | null>(null);
+  
+  // Recommendation states
+  const [recommendations, setRecommendations] = useState<{ title: string; artist: string; reason: string }[]>([]);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
 
   const logout = () => {
     localStorage.clear();
     window.location.reload();
+  };
+
+  const getRecommendations = async () => {
+    if (tracks.length === 0) return;
+    
+    setRecLoading(true);
+    setRecError(null);
+    
+    try {
+      const topTracks = tracks.slice(0, 20).map(t => t.name);
+      
+      // Get unique artist names from tracks and take top 10
+      const artistNamesMap: Record<string, boolean> = {};
+      const uniqueArtistNames: string[] = [];
+      tracks.forEach(track => {
+        track.artists.forEach(artist => {
+          if (!artistNamesMap[artist.name]) {
+            artistNamesMap[artist.name] = true;
+            uniqueArtistNames.push(artist.name);
+          }
+        });
+      });
+      const topArtists = uniqueArtistNames.slice(0, 10);
+      
+      const metrics = computeTasteMetrics(tracks);
+      
+      const response = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topArtists, topTracks, metrics }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setRecError(data.error);
+      } else {
+        setRecommendations(data.recommendations || []);
+      }
+    } catch (err) {
+      console.error('Failed to get recommendations:', err);
+      setRecError('추천 정보를 가져오는 중 오류가 발생했습니다.');
+    } finally {
+      setRecLoading(false);
+    }
   };
 
   const fetchData = useCallback(async (accessToken: string) => {
@@ -90,6 +148,10 @@ export default function Home() {
           })
         );
         setRadarData(radarPoints);
+
+        // Track stats
+        const trackStats = computeTrackStats(data.items);
+        setStats(trackStats);
       } else if (data.error) {
         // Token might be invalid
         logout();
@@ -155,6 +217,43 @@ export default function Home() {
       </header>
 
       <main className="mx-auto max-w-6xl p-6 py-12">
+        {stats && (
+          <section className="mb-16">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <div className="rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-xl">
+                <div className="text-sm text-zinc-400 mb-2">Top 50 총 재생 시간</div>
+                <div className="text-3xl font-bold text-green-500">
+                  {stats.hours}
+                  <span className="text-lg text-zinc-400 font-medium ml-1">시간</span>
+                  <span className="ml-2">{stats.minutes}</span>
+                  <span className="text-lg text-zinc-400 font-medium ml-1">분</span>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-xl">
+                <div className="text-sm text-zinc-400 mb-2">고유 아티스트</div>
+                <div className="text-3xl font-bold text-green-500">
+                  {stats.uniqueArtists}
+                  <span className="text-lg text-zinc-400 font-medium ml-1">명</span>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-xl">
+                <div className="text-sm text-zinc-400 mb-2">고유 앨범</div>
+                <div className="text-3xl font-bold text-green-500">
+                  {stats.uniqueAlbums}
+                  <span className="text-lg text-zinc-400 font-medium ml-1">개</span>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-xl">
+                <div className="text-sm text-zinc-400 mb-2">분석한 곡</div>
+                <div className="text-3xl font-bold text-green-500">
+                  {stats.trackCount}
+                  <span className="text-lg text-zinc-400 font-medium ml-1">곡</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         <section className="mb-16">
           <div className="mb-8">
             <h2 className="text-3xl font-bold tracking-tight">Your Taste Profile</h2>
@@ -194,6 +293,46 @@ export default function Home() {
               </RadarChart>
             </ResponsiveContainer>
           </div>
+        </section>
+
+        {/* AI Recommendations Section */}
+        <section className="mb-16">
+          <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight">AI 추천 플레이리스트</h2>
+              <p className="text-zinc-400">당신의 취향을 분석해 새로운 곡을 찾아드려요</p>
+            </div>
+            <button
+              onClick={getRecommendations}
+              disabled={recLoading}
+              className="rounded-full bg-green-500 px-8 py-3 font-bold text-black transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+            >
+              {recLoading ? '분석 중...' : '추천 받기'}
+            </button>
+          </div>
+
+          {recError && (
+            <div className="mb-8 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-500">
+              {recError}
+            </div>
+          )}
+
+          {recommendations.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {recommendations.map((rec, index) => (
+                <div
+                  key={index}
+                  className="rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 transition-all hover:bg-zinc-800/60"
+                >
+                  <div className="font-bold text-white text-lg mb-1">{rec.title}</div>
+                  <div className="text-sm font-medium text-green-500 mb-3">{rec.artist}</div>
+                  <div className="text-sm text-zinc-400 leading-relaxed italic">
+                    "{rec.reason}"
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="mb-16">
