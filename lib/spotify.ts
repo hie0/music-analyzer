@@ -78,3 +78,82 @@ export async function getTopTracks(token: string) {
   console.log('Top tracks response:', text.substring(0, 200));
   return JSON.parse(text);
 }
+
+export type TasteMetrics = {
+  recency: number;
+  retro: number;
+  concentration: number;
+  albumDiversity: number;
+  longTracks: number;
+  fullAlbum: number;
+};
+
+export function computeTasteMetrics(tracks: any[] = []): TasteMetrics {
+  const empty: TasteMetrics = {
+    recency: 0,
+    retro: 0,
+    concentration: 0,
+    albumDiversity: 0,
+    longTracks: 0,
+    fullAlbum: 0,
+  };
+
+  if (!tracks || tracks.length === 0) {
+    return empty;
+  }
+
+  const trackCount = tracks.length;
+  const currentYear = new Date().getFullYear();
+
+  // release_date에서 연도만 안전하게 추출 (없거나 형식이 이상하면 null)
+  const years = tracks.map((t) => {
+    const raw = t.album?.release_date;
+    if (!raw || typeof raw !== 'string') return null;
+    const year = parseInt(raw.slice(0, 4), 10);
+    return Number.isFinite(year) ? year : null;
+  });
+
+  // recency: 최근 3년 내 발매 곡 비율 (전체 곡 수로 나눠 비율 왜곡 방지)
+  const recentCount = years.filter((y) => y !== null && y >= currentYear - 3).length;
+  const recency = (recentCount / trackCount) * 100;
+
+  // retro: 발매 10년 이상 된 곡 비율
+  const retroCount = years.filter((y) => y !== null && y <= currentYear - 10).length;
+  const retro = (retroCount / trackCount) * 100;
+
+  // concentration: 최다 등장 아티스트 id의 등장 횟수 / 전체 곡 수
+  const artistCounts: Record<string, number> = {};
+  tracks.forEach((t) => {
+    (t.artists || []).forEach((a: any) => {
+      if (a?.id) artistCounts[a.id] = (artistCounts[a.id] || 0) + 1;
+    });
+  });
+  const maxArtistCount = Math.max(...Object.values(artistCounts), 0);
+  const concentration = (maxArtistCount / trackCount) * 100;
+
+  // albumDiversity: 고유 album.name 개수 / 곡 수
+  const uniqueAlbums = new Set(
+    tracks.map((t) => t.album?.name).filter((n) => !!n)
+  ).size;
+  const albumDiversity = (uniqueAlbums / trackCount) * 100;
+
+  // longTracks: duration_ms 평균을 4분(240000ms)=100 기준으로 스케일, 8분 이상은 100 캡
+  const avgDuration =
+    tracks.reduce((acc, t) => acc + (t.duration_ms || 0), 0) / trackCount;
+  const longTracks = Math.min((avgDuration / 240000) * 100, 100);
+
+  // fullAlbum: album_type이 'album'인 곡 비율
+  const albumTypeCount = tracks.filter(
+    (t) => t.album?.album_type === 'album'
+  ).length;
+  const fullAlbum = (albumTypeCount / trackCount) * 100;
+
+  return {
+    recency: Math.round(recency),
+    retro: Math.round(retro),
+    concentration: Math.round(concentration),
+    albumDiversity: Math.round(albumDiversity),
+    longTracks: Math.round(longTracks),
+    fullAlbum: Math.round(fullAlbum),
+  };
+}

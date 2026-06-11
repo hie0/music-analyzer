@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
-import { redirectToAuthCodeFlow, getTopTracks } from '@/lib/spotify';
+import { redirectToAuthCodeFlow, getTopTracks, computeTasteMetrics } from '@/lib/spotify';
 import {
   BarChart,
   Bar,
@@ -12,6 +12,11 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
 } from 'recharts';
 
 type SpotifyTrack = {
@@ -29,10 +34,25 @@ type ArtistData = {
   count: number;
 };
 
+type RadarPoint = {
+  axis: string;
+  value: number;
+};
+
+const AXIS_LABELS: Record<string, string> = {
+  recency: '최신성',
+  retro: '레트로',
+  concentration: '집중도',
+  albumDiversity: '앨범 다양성',
+  longTracks: '대곡 취향',
+  fullAlbum: '정규앨범',
+};
+
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [tracks, setTracks] = useState<SpotifyTrack[]>([]);
   const [artistData, setArtistData] = useState<ArtistData[]>([]);
+  const [radarData, setRadarData] = useState<RadarPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   const logout = () => {
@@ -45,7 +65,7 @@ export default function Home() {
       const data = await getTopTracks(accessToken);
       if (data.items) {
         setTracks(data.items);
-        
+
         // Aggregate artists
         const counts: Record<string, number> = {};
         data.items.forEach((track: SpotifyTrack) => {
@@ -60,6 +80,16 @@ export default function Home() {
           .slice(0, 10); // Top 10 artists
 
         setArtistData(formattedData);
+
+        // Taste metrics -> radar data
+        const metrics = computeTasteMetrics(data.items);
+        const radarPoints: RadarPoint[] = Object.entries(metrics).map(
+          ([key, value]) => ({
+            axis: AXIS_LABELS[key] || key,
+            value: value as number,
+          })
+        );
+        setRadarData(radarPoints);
       } else if (data.error) {
         // Token might be invalid
         logout();
@@ -127,10 +157,51 @@ export default function Home() {
       <main className="mx-auto max-w-6xl p-6 py-12">
         <section className="mb-16">
           <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight">Your Taste Profile</h2>
+            <p className="text-zinc-400">6가지 지표로 본 당신의 청취 성향</p>
+          </div>
+
+          <div className="h-[450px] w-full rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-2xl">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} outerRadius="75%">
+                <PolarGrid stroke="#333" />
+                <PolarAngleAxis
+                  dataKey="axis"
+                  tick={{ fill: '#ccc', fontSize: 13 }}
+                />
+                <PolarRadiusAxis
+                  angle={90}
+                  domain={[0, 100]}
+                  tick={{ fill: '#555', fontSize: 10 }}
+                  stroke="#333"
+                />
+                <Radar
+                  name="Taste"
+                  dataKey="value"
+                  stroke="#22c55e"
+                  fill="#22c55e"
+                  fillOpacity={0.5}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#18181b',
+                    border: '1px solid #333',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+                  }}
+                  itemStyle={{ color: '#22c55e', fontWeight: 'bold' }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section className="mb-16">
+          <div className="mb-8">
             <h2 className="text-3xl font-bold tracking-tight">Top Artists</h2>
             <p className="text-zinc-400">Frequency in your top 50 tracks (medium term)</p>
           </div>
-          
+
           <div className="h-[450px] w-full rounded-2xl bg-zinc-900/50 p-6 border border-zinc-800/50 shadow-2xl">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={artistData} layout="vertical" margin={{ left: 30, right: 30 }}>
@@ -138,9 +209,9 @@ export default function Home() {
                 <XAxis type="number" stroke="#555" />
                 <YAxis dataKey="name" type="category" stroke="#ccc" width={100} tick={{ fontSize: 12 }} />
                 <Tooltip
-                  contentStyle={{ 
-                    backgroundColor: '#18181b', 
-                    border: '1px solid #333', 
+                  contentStyle={{
+                    backgroundColor: '#18181b',
+                    border: '1px solid #333',
                     borderRadius: '12px',
                     boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
                   }}
@@ -149,8 +220,8 @@ export default function Home() {
                 />
                 <Bar dataKey="count" fill="#22c55e" radius={[0, 6, 6, 0]} barSize={32}>
                   {artistData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
+                    <Cell
+                      key={`cell-${index}`}
                       fill={`rgba(34, 197, 94, ${1 - index * 0.08})`}
                       className="transition-all duration-300"
                     />
@@ -166,7 +237,7 @@ export default function Home() {
             <h2 className="text-3xl font-bold tracking-tight">Top Tracks</h2>
             <p className="text-zinc-400">Your most played songs recently</p>
           </div>
-          
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {tracks.map((track, idx) => (
               <div
@@ -175,13 +246,17 @@ export default function Home() {
               >
                 <div className="flex-none text-zinc-600 font-mono text-sm w-4">{idx + 1}</div>
                 <div className="relative h-16 w-16 shrink-0 shadow-xl transition-transform group-hover:scale-105">
-                  <Image
-                    src={track.album.images[0]?.url || ''}
-                    alt={track.name}
-                    fill
-                    sizes="64px"
-                    className="rounded-lg object-cover"
-                  />
+                  {track.album.images[0]?.url ? (
+                    <Image
+                      src={track.album.images[0].url}
+                      alt={track.name}
+                      fill
+                      sizes="64px"
+                      className="rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full rounded-lg bg-zinc-800" />
+                  )}
                 </div>
                 <div className="overflow-hidden">
                   <div className="truncate font-bold text-white group-hover:text-green-500 transition-colors">
@@ -196,7 +271,7 @@ export default function Home() {
           </div>
         </section>
       </main>
-      
+
       <footer className="mt-20 border-t border-zinc-900 p-12 text-center text-zinc-500 text-sm">
         <p>© 2026 Music Analyzer. Powered by Spotify API.</p>
       </footer>
