@@ -458,7 +458,7 @@ export default function Home() {
                   radius={[0, 6, 6, 0]} 
                   barSize={32}
                   style={{ cursor: 'pointer' }}
-                  onClick={(data) => handleArtistClick(data.name)}
+                  onClick={(data) => data.name && handleArtistClick(data.name as string)}
                 >
                   {artistData.map((entry, index) => (
                     <Cell
