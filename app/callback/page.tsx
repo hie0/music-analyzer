@@ -18,7 +18,7 @@ export default function Callback() {
         console.log('token:', token);
         if (token) {
           localStorage.setItem('spotify_access_token', token);
-          window.location.href = 'http://127.0.0.1:3000';
+          window.location.href = window.location.origin;
         }
       }).catch((err) => {
         console.error('Error:', err);

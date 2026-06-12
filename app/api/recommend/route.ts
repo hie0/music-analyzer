@@ -7,9 +7,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(request: Request) {
   try {
-    const { topArtists, topTracks, metrics } = await request.json();
+    const { topArtists, topTracks, metrics, mood } = await request.json();
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    let moodInstruction = '';
+    if (mood) {
+      moodInstruction = `특히 지금은 '${mood}' 상황/기분에 어울리는 곡으로 추천해줘. 그 분위기에 맞는 템포와 무드를 고려해줘.`;
+    }
 
     const prompt = `
       사용자의 음악 취향 데이터:
@@ -19,6 +24,7 @@ export async function POST(request: Request) {
 
       이 취향에 어울리는 '새로운' 곡 10개를 추천해줘. 
       이미 듣는 아티스트는 제외하고, 비슷한 분위기의 다른 아티스트 곡으로 추천해줘.
+      ${moodInstruction}
       **중요: title은 번역하지 말고 Spotify에 등록된 원곡 제목 그대로(영어, 일본어 등) 표기해줘.**
       반드시 아래 JSON 배열 형식으로만 응답해 (마크다운 펜스, 설명 없이 순수 JSON 데이터만):
       [{ "title": "곡 제목", "artist": "아티스트명", "reason": "추천 이유 한 문장" }]

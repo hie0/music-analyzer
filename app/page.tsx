@@ -74,6 +74,7 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
 
   // Artist tracks modal states
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
@@ -87,7 +88,7 @@ export default function Home() {
     window.location.reload();
   };
 
-  const getRecommendations = async () => {
+  const getRecommendations = async (mood?: string) => {
     if (tracks.length === 0 || !token) return;
     
     setRecLoading(true);
@@ -113,7 +114,7 @@ export default function Home() {
       const response = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topArtists, topTracks, metrics }),
+        body: JSON.stringify({ topArtists, topTracks, metrics, mood }),
       });
       
       const data = await response.json();
@@ -341,13 +342,34 @@ export default function Home() {
 
         {/* AI Recommendations Section */}
         <section className="mb-16">
-          <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-            <div>
-              <h2 className="text-3xl font-bold tracking-tight">AI 추천 플레이리스트</h2>
-              <p className="text-zinc-400">당신의 취향을 분석해 새로운 곡을 찾아드려요</p>
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight">AI 추천 플레이리스트</h2>
+            <p className="text-zinc-400">당신의 취향을 분석해 새로운 곡을 찾아드려요</p>
+          </div>
+
+          <div className="mb-8 flex flex-col items-end gap-6">
+            <div className="text-right">
+              <p className="text-zinc-500 text-sm mb-2">기분을 선택하면 그에 맞춰 추천해드려요 (선택 안 하면 전체 취향 기반)</p>
+              <div className="flex flex-wrap gap-2 justify-end">
+                {['운동할 때', '비 오는 날', '집중할 때', '신나게', '차분하게'].map((mood) => (
+                  <button
+                    key={mood}
+                    onClick={() => setSelectedMood(prev => prev === mood ? null : mood)}
+                    disabled={recLoading}
+                    className={`text-sm px-4 py-2 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      selectedMood === mood 
+                        ? 'bg-green-500 text-black border-green-500' 
+                        : 'border-zinc-700 text-zinc-300 hover:border-green-500 hover:text-green-500'
+                    }`}
+                  >
+                    {mood}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <button
-              onClick={getRecommendations}
+              onClick={() => getRecommendations(selectedMood || undefined)}
               disabled={recLoading}
               className="rounded-full bg-green-500 px-8 py-3 font-bold text-black transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
             >
@@ -358,6 +380,12 @@ export default function Home() {
           {recError && (
             <div className="mb-8 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-500">
               {recError}
+            </div>
+          )}
+
+          {selectedMood && recommendations.length > 0 && (
+            <div className="mb-4 text-green-500 text-sm font-medium">
+              &apos;{selectedMood}&apos; 추천 결과
             </div>
           )}
 
@@ -383,7 +411,7 @@ export default function Home() {
                       <div className="font-bold text-white text-lg mb-0.5 truncate">{rec.title}</div>
                       <div className="text-sm font-medium text-green-500 mb-2 truncate">{rec.artist}</div>
                       <div className="text-xs text-zinc-400 leading-tight line-clamp-2 italic mb-2">
-                        "{rec.reason}"
+                        &quot;{rec.reason}&quot;
                       </div>
                       {!rec.found && <div className="text-[10px] text-zinc-600 font-medium">Spotify에서 찾을 수 없음</div>}
                     </div>
